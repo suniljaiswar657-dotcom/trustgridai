@@ -19,7 +19,7 @@ function inspectDomain(value: string): ScanResult | null {
 
   const hasHttps = /^https:\/\//i.test(value.trim());
   const parts = domain.split(".");
-  const isCommonTld = ["com", "org", "net", "io", "ai", "in", "co", "dev"].includes(parts.at(-1) || "");
+  const isCommonTld = ["com", "org", "net", "io", "ai", "in", "co", "dev"].includes(parts[parts.length - 1] || "");
   const score = 52 + (hasHttps ? 18 : 0) + (isCommonTld ? 10 : 0) + (domain.length > 7 ? 8 : 0) + (parts.length >= 2 ? 7 : 0);
   const bounded = Math.min(score, 95);
 
