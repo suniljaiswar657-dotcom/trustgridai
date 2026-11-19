@@ -6,35 +6,13 @@ type ScanResult = {
   domain: string;
   score: number;
   grade: string;
+  httpStatus: number;
+  server: string;
+  title: string;
+  scannedAt: string;
+  disclaimer: string;
   checks: { label: string; status: "pass" | "review" | "info"; detail: string }[];
 };
-
-function normalizeDomain(value: string) {
-  return value.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].toLowerCase();
-}
-
-function inspectDomain(value: string): ScanResult | null {
-  const domain = normalizeDomain(value);
-  if (!/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(domain)) return null;
-
-  const hasHttps = /^https:\/\//i.test(value.trim());
-  const parts = domain.split(".");
-  const isCommonTld = ["com", "org", "net", "io", "ai", "in", "co", "dev"].includes(parts[parts.length - 1] || "");
-  const score = 52 + (hasHttps ? 18 : 0) + (isCommonTld ? 10 : 0) + (domain.length > 7 ? 8 : 0) + (parts.length >= 2 ? 7 : 0);
-  const bounded = Math.min(score, 95);
-
-  return {
-    domain,
-    score: bounded,
-    grade: bounded >= 80 ? "Strong signals" : bounded >= 65 ? "Mixed signals" : "Needs review",
-    checks: [
-      { label: "Domain format", status: "pass", detail: "The supplied domain has a valid hostname format." },
-      { label: "HTTPS supplied", status: hasHttps ? "pass" : "review", detail: hasHttps ? "You entered an HTTPS URL. The live certificate was not independently checked." : "Enter an HTTPS URL where available. A live TLS check is not performed in this demo." },
-      { label: "Public suffix", status: isCommonTld ? "pass" : "info", detail: "Suffix recognition is a basic format signal, not proof of legitimacy." },
-      { label: "Live reputation", status: "info", detail: "Not checked in this preview. Connect verified threat-intelligence and domain data sources for production." }
-    ]
-  };
-}
 
 const features = [
   { n: "01", title: "Trust Passport", text: "A structured profile for a business, website or AI service — with evidence, ownership claims and change history.", tag: "IDENTITY" },
@@ -47,19 +25,25 @@ export default function Home() {
   const [domain, setDomain] = useState("");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const year = useMemo(() => new Date().getFullYear(), []);
 
-  function runScan(e: React.FormEvent<HTMLFormElement>) {
+  async function runScan(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const found = inspectDomain(domain);
-    if (!found) {
-      setError("Enter a valid domain, for example https://example.com");
-      setResult(null);
-      return;
-    }
     setError("");
-    setResult(found);
+    setResult(null);
+    setScanning(true);
+    try {
+      const response = await fetch("/api/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: domain }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Scan could not be completed.");
+      setResult(data as ScanResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Scan could not be completed.");
+    } finally {
+      setScanning(false);
+    }
   }
 
   return (
@@ -107,9 +91,9 @@ export default function Home() {
       </section>
 
       <section className="scanner-section" id="scanner"><div className="shell scanner-layout"><div className="scanner-copy"><div className="eyebrow">02 / INTERACTIVE PREVIEW</div><h2>Look closer.<br /><span>Know more.</span></h2><p>Start with a domain. This local preview validates its format and illustrates how a transparent trust review could look.</p><div className="scanner-note"><span>i</span><p>This preview does not contact the domain, inspect certificates, query threat feeds or establish whether a business is legitimate.</p></div></div>
-        <div className="scanner-panel"><div className="panel-head"><div><span className="panel-kicker">TRUSTGRID / SCAN MODULE</span><h3>Domain signal check</h3></div><span className="panel-status"><i /> DEMO MODE</span></div><form onSubmit={runScan} className="scan-form"><label htmlFor="domain">WEBSITE DOMAIN</label><div className="input-row"><input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="https://yourwebsite.com" autoComplete="url" /><button type="submit">ANALYZE <span>↗</span></button></div>{error && <p className="form-error">{error}</p>}</form>
-          {!result ? <div className="empty-state"><div className="empty-radar"><span /><span /><span /><b>◎</b></div><strong>Awaiting a domain</strong><p>Enter a website above to generate a sample signal report.</p></div> : <div className="result-state"><div className="score-row"><div><span className="panel-kicker">SAMPLE SIGNAL SCORE</span><div className="score-number">{result.score}<small>/100</small></div><strong>{result.grade}</strong></div><div className="score-ring" style={{ background: `conic-gradient(#a7f3d0 ${result.score * 3.6}deg, #25312f 0deg)` }}><div>{result.score}</div></div></div><div className="result-domain">{result.domain}</div><div className="check-list">{result.checks.map((c) => <div className="check-item" key={c.label}><span className={`check-icon ${c.status}`}>{c.status === "pass" ? "✓" : c.status === "review" ? "!" : "i"}</span><div><strong>{c.label}</strong><p>{c.detail}</p></div></div>)}</div><button className="reset-scan" onClick={() => { setResult(null); setDomain(""); }}>CLEAR REPORT ↺</button></div>}
-          <div className="panel-foot"><span>LOCAL DEMO · NO EXTERNAL REQUESTS</span><span>TRUST IS EVIDENCE, NOT A PROMISE</span></div>
+        <div className="scanner-panel"><div className="panel-head"><div><span className="panel-kicker">TRUSTGRID / SCAN MODULE</span><h3>Domain signal check</h3></div><span className="panel-status"><i /> DEMO MODE</span></div><form onSubmit={runScan} className="scan-form"><label htmlFor="domain">WEBSITE DOMAIN</label><div className="input-row"><input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="https://yourwebsite.com" autoComplete="url" /><button type="submit" disabled={scanning}>{scanning ? "SCANNING…" : "ANALYZE"} <span>↗</span></button></div>{error && <p className="form-error">{error}</p>}</form>
+          {!result ? <div className="empty-state"><div className="empty-radar"><span /><span /><span /><b>◎</b></div><strong>Awaiting a domain</strong><p>Enter a public HTTPS website to inspect live response and security headers.</p></div> : <div className="result-state"><div className="score-row"><div><span className="panel-kicker">TECHNICAL SIGNAL SCORE</span><div className="score-number">{result.score}<small>/100</small></div><strong>{result.grade}</strong></div><div className="score-ring" style={{ background: `conic-gradient(#a7f3d0 ${result.score * 3.6}deg, #25312f 0deg)` }}><div>{result.score}</div></div></div><div className="result-domain">{result.domain} · HTTP {result.httpStatus} · {result.server}</div>{result.title && <p className="result-title">Page title: {result.title}</p>}<div className="check-list">{result.checks.map((c) => <div className="check-item" key={c.label}><span className={`check-icon ${c.status}`}>{c.status === "pass" ? "✓" : c.status === "review" ? "!" : "i"}</span><div><strong>{c.label}</strong><p>{c.detail}</p></div></div>)}</div><p className="result-disclaimer">{result.disclaimer}</p><button className="reset-scan" onClick={() => { setResult(null); setDomain(""); }}>CLEAR REPORT ↺</button></div>}
+          <div className="panel-foot"><span>LIVE HTTPS CHECK · LIMITED SIGNALS</span><span>TRUST IS EVIDENCE, NOT A PROMISE</span></div>
         </div></div></section>
 
       <section className="section shell developer-section" id="developers"><div className="developer-visual"><div className="code-window"><div className="code-top"><span /><span /><span /><small>trustgrid.request</small></div><pre><code><span className="code-purple">const</span> trust = <span className="code-blue">await</span> fetch(<span className="code-green">"/v1/trust/domain"</span>, {"{"}{'\n'}  method: <span className="code-green">"POST"</span>,{'\n'}  headers: {"{"} Authorization: token {"}"}{'\n'}{"}"});{'\n'}<span className="code-purple">const</span> profile = <span className="code-blue">await</span> trust.json();{'\n'}<span className="code-muted">// inspect evidence, not promises</span></code></pre><div className="code-bottom"><span>API CONCEPT</span><span>COMING SOON</span></div></div><div className="developer-orbit">⟡</div></div><div className="developer-copy"><div className="eyebrow">03 / FOR BUILDERS</div><h2>Trust, built<br />into your <span>stack.</span></h2><p>Build products that can reason about digital identity, evidence and agent permissions. A developer-first API is on the roadmap.</p><a className="button button-outline" href="mailto:hello@trustgrid.example?subject=TRUSTGRID%20Developer%20Access">Request developer updates <span>↗</span></a><small>Illustrative API only. No public API is available yet.</small></div></section>
